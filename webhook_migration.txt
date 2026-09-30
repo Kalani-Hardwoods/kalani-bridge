@@ -1,0 +1,23 @@
+Webhook Migration: WebhookRelay → AWS
+Kalani Hardwoods · sawmill app ecosystem
+Goal: Replace WebhookRelay with an AWS-native ingest path for our two inbound-to-AppSheet flows.
+Architecture
+Source webhook → API Gateway → EventBridge → Lambda → AppSheet API
+Flows it covers
+1. Board creation — Transloadit “assembly complete” updates the AppSheet row with S3 photo URLs and a
+ready flag; the existing bot then pushes the product to Shopify.
+2. Product delete (cascade) — Shopify products/delete webhook deletes the AppSheet row, which triggers
+cascade deletes across the related tables.
+Components to build
+• API Gateway — two routes, one per flow. Validates the Shopify HMAC signature on the delete route.
+• EventBridge — event bus plus one rule per flow to route to the Lambda.
+• Lambda — reformats each incoming payload into the AppSheet API shape (the transformation
+WebhookRelay did). Two handlers in one function.
+• Dead-letter queue (SQS) — on the delete path only, so a momentary AppSheet outage doesn’t drop a
+deletion and leave orphaned rows.
+• IAM roles — API Gateway→EventBridge, EventBridge→Lambda, Lambda→AppSheet.
+Why EventBridge (vs. straight API Gateway → Lambda)
+Durability on the delete cascade — automatic retries plus a DLQ. The create flow is more forgiving, but
+keeping both on one bus keeps it consistent and leaves room to fan out later (logging, Slack, dashboards).
+Unchanged
+S3 storage, Shopify, and the AppSheet bots.
